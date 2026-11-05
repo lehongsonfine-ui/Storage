@@ -1,0 +1,1590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cities Skylines 2 - Ultra Detail & Model Engine</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Three.js & OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <style>
+        * { font-family: 'Inter', sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #020617; color: #f8fafc; touch-action: manipulation; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        
+        .glass-panel {
+            background: rgba(8, 14, 27, 0.88);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+        }
+        .glass-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-btn:active, .glass-btn:hover {
+            background: rgba(255, 255, 255, 0.22);
+            border-color: rgba(255, 255, 255, 0.35);
+        }
+        .glass-btn.active {
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.85), rgba(29, 78, 216, 0.95));
+            border-color: #60a5fa;
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.65);
+        }
+
+        .sub-panel { animation: slideUp 0.18s ease-out; }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .tap-ring {
+            position: absolute;
+            width: 48px;
+            height: 48px;
+            border: 3px solid #38bdf8;
+            border-radius: 50%;
+            pointer-events: none;
+            transform: translate(-50%, -50%) scale(0.3);
+            animation: ringPulse 0.4s ease-out forwards;
+            z-index: 100;
+        }
+        @keyframes ringPulse {
+            0% { opacity: 1; transform: translate(-50%, -50%) scale(0.3); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(1.6); }
+        }
+
+        .toast-banner { animation: fadeInOut 2.5s ease-in-out forwards; }
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translate(-50%, -20px); }
+            15% { opacity: 1; transform: translate(-50%, 0); }
+            85% { opacity: 1; transform: translate(-50%, 0); }
+            100% { opacity: 0; transform: translate(-50%, -20px); }
+        }
+        
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 4px; }
+
+        #flash-overlay { pointer-events: none; transition: opacity 0.05s ease-out; }
+    </style>
+</head>
+<body class="relative">
+
+    <!-- Lightning Flash Overlay -->
+    <div id="flash-overlay" class="absolute inset-0 bg-white/30 z-50 opacity-0 pointer-events-none"></div>
+
+    <!-- WebGL Canvas Container -->
+    <div id="canvas-container" class="w-full h-full"></div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="absolute top-20 left-1/2 -translate-x-1/2 z-40 pointer-events-none flex flex-col gap-2"></div>
+
+    <!-- TOP HUD: METRICS, RCI & WEATHER CONTROLS -->
+    <div class="absolute top-2 left-2 right-2 flex flex-wrap justify-between items-center gap-2 pointer-events-none z-10">
+        <div class="glass-panel px-3.5 py-2 rounded-2xl flex items-center gap-3 pointer-events-auto">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-400 flex items-center justify-center text-white text-base font-black shadow-lg">
+                    CS2
+                </div>
+                <div>
+                    <h1 class="text-[11px] font-black tracking-wider text-gray-100 uppercase flex items-center gap-1.5">
+                        Metropolis Bay
+                        <span class="text-[8px] bg-gradient-to-r from-red-500/40 via-blue-500/40 to-emerald-500/40 text-cyan-300 px-2 py-0.5 rounded-full font-extrabold border border-cyan-500/40">35x35 FENCED MAP</span>
+                    </h1>
+                    <p class="text-[10px] text-cyan-300 font-semibold" id="time-display">08:00 AM - Day 1</p>
+                </div>
+            </div>
+
+            <div class="h-7 w-px bg-white/10 hidden sm:block"></div>
+
+            <div class="flex items-center gap-3.5 text-xs">
+                <div class="flex items-center gap-1.5">
+                    <i class="fa-solid fa-users text-emerald-400 text-xs"></i>
+                    <div>
+                        <div class="text-[8px] text-gray-400 uppercase font-bold tracking-wider">Population</div>
+                        <div class="font-bold text-gray-100 text-xs" id="stat-pop">75</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-1.5">
+                    <i class="fa-solid fa-heart-pulse text-red-400 text-xs"></i>
+                    <div>
+                        <div class="text-[8px] text-gray-400 uppercase font-bold tracking-wider">City Health</div>
+                        <div class="font-bold text-red-400 text-xs" id="stat-health">98%</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-1.5">
+                    <i class="fa-solid fa-shield-halved text-blue-400 text-xs"></i>
+                    <div>
+                        <div class="text-[8px] text-gray-400 uppercase font-bold tracking-wider">Safety Index</div>
+                        <div class="font-bold text-blue-400 text-xs" id="stat-safety">95%</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-1.5">
+                    <i class="fa-solid fa-truck-medical text-rose-400 text-xs"></i>
+                    <div>
+                        <div class="text-[8px] text-gray-400 uppercase font-bold tracking-wider">Emergency Dispatches</div>
+                        <div class="font-bold text-gray-100 text-xs" id="stat-emergency">0 Active</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-1.5">
+                    <i class="fa-solid fa-vault text-green-400 text-xs"></i>
+                    <div>
+                        <div class="text-[8px] text-gray-400 uppercase font-bold tracking-wider">Treasury</div>
+                        <div class="font-bold text-emerald-400 text-xs" id="stat-money">$1,500,000</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RCI Demand Gauges -->
+            <div class="h-7 w-px bg-white/10 hidden lg:block"></div>
+            <div class="hidden lg:flex items-center gap-1.5 text-[10px] font-extrabold">
+                <span class="text-gray-400">RCI</span>
+                <div class="flex items-end h-5 gap-1 bg-gray-900/60 p-1 rounded-lg border border-white/5">
+                    <div id="rci-res" class="w-2 bg-emerald-500 rounded-sm transition-all duration-300" style="height: 85%" title="Residential"></div>
+                    <div id="rci-com" class="w-2 bg-amber-500 rounded-sm transition-all duration-300" style="height: 65%" title="Commercial"></div>
+                    <div id="rci-ind" class="w-2 bg-indigo-500 rounded-sm transition-all duration-300" style="height: 75%" title="Industrial"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Weather Controls & Simulation Speed Bar -->
+        <div class="flex items-center gap-2 pointer-events-auto">
+            <div class="glass-panel px-2 py-1 rounded-2xl flex items-center gap-1">
+                <span class="text-[10px] font-bold text-gray-300 px-1" id="wx-temp">24°C</span>
+                <button onclick="setWeather('sunny')" id="wx-sunny" class="glass-btn active w-7 h-7 rounded-xl flex items-center justify-center text-amber-400 text-xs" title="Clear Sunny">
+                    <i class="fa-solid fa-sun"></i>
+                </button>
+                <button onclick="setWeather('sunset')" id="wx-sunset" class="glass-btn w-7 h-7 rounded-xl flex items-center justify-center text-orange-400 text-xs" title="Golden Sunset">
+                    <i class="fa-solid fa-mountain-sun"></i>
+                </button>
+                <button onclick="setWeather('rain')" id="wx-rain" class="glass-btn w-7 h-7 rounded-xl flex items-center justify-center text-blue-400 text-xs" title="Rain Showers">
+                    <i class="fa-solid fa-cloud-showers-heavy"></i>
+                </button>
+                <button onclick="setWeather('snow')" id="wx-snow" class="glass-btn w-7 h-7 rounded-xl flex items-center justify-center text-cyan-200 text-xs" title="Blizzard Snow">
+                    <i class="fa-solid fa-snowflake"></i>
+                </button>
+                <button onclick="setWeather('storm')" id="wx-storm" class="glass-btn w-7 h-7 rounded-xl flex items-center justify-center text-purple-400 text-xs" title="Thunderstorm">
+                    <i class="fa-solid fa-cloud-bolt"></i>
+                </button>
+            </div>
+
+            <div class="glass-panel px-1.5 py-1 rounded-2xl flex items-center gap-1">
+                <button id="btn-pause" onclick="setSpeed(0)" class="glass-btn w-7 h-7 rounded-xl flex items-center justify-center text-gray-300 text-xs">
+                    <i class="fa-solid fa-pause"></i>
+                </button>
+                <button id="btn-speed1" onclick="setSpeed(1)" class="glass-btn active w-7 h-7 rounded-xl flex items-center justify-center text-gray-300 text-xs font-bold">
+                    1x
+                </button>
+                <button id="btn-speed2" onclick="setSpeed(2)" class="glass-btn w-7 h-7 rounded-xl flex items-center justify-center text-gray-300 text-xs font-bold">
+                    2x
+                </button>
+                <button id="btn-speed5" onclick="setSpeed(5)" class="glass-btn w-7 h-7 rounded-xl flex items-center justify-center text-gray-300 text-xs font-bold">
+                    5x
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LEFT SIDEBAR: CITIZENS DIRECTORY & CHIRPER SOCIAL FEED -->
+    <div class="absolute top-16 left-2 bottom-20 w-72 glass-panel rounded-2xl p-3 flex flex-col gap-2.5 pointer-events-auto z-10 hidden md:flex">
+        <div class="flex bg-white/5 p-1 rounded-xl border border-white/5">
+            <button id="tab-btn-cims" onclick="switchLeftTab('cims')" class="flex-1 py-1.5 text-xs font-bold text-blue-400 bg-white/10 rounded-lg transition-all">
+                <i class="fa-solid fa-users mr-1"></i> Citizens (<span id="tab-cim-count">75</span>)
+            </button>
+            <button id="tab-btn-chirper" onclick="switchLeftTab('chirper')" class="flex-1 py-1.5 text-xs font-bold text-gray-400 hover:text-white transition-all">
+                <i class="fa-solid fa-dove text-sky-400 mr-1"></i> Chirper
+            </button>
+        </div>
+
+        <!-- Citizens Directory -->
+        <div id="tab-cims" class="flex-1 flex flex-col min-h-0 gap-2">
+            <div id="citizen-list" class="flex-1 overflow-y-auto space-y-1.5 pr-1"></div>
+            <button onclick="spawnPopulationBatch(10)" class="w-full py-2 bg-gradient-to-r from-emerald-600 to-teal-600 active:scale-98 rounded-xl text-xs font-extrabold text-white shadow-lg transition-all">
+                <i class="fa-solid fa-user-plus mr-1"></i> Immigrate Citizens +10
+            </button>
+        </div>
+
+        <!-- Chirper Social Feed -->
+        <div id="tab-chirper" class="flex-1 flex flex-col min-h-0 gap-2 hidden">
+            <div id="chirper-feed" class="flex-1 overflow-y-auto space-y-2 pr-1"></div>
+        </div>
+    </div>
+
+    <!-- RIGHT SIDEBAR: CITIZEN INSPECTOR PANEL -->
+    <div id="inspector-panel" class="absolute top-16 right-2 bottom-20 w-72 sm:w-80 glass-panel rounded-2xl p-3.5 flex flex-col gap-2.5 pointer-events-auto transform translate-x-[125%] transition-transform duration-250 ease-in-out z-20">
+        <div class="flex items-center justify-between pb-2 border-b border-white/10">
+            <div class="flex items-center gap-2.5">
+                <div id="cim-avatar" class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-base font-black text-white border border-white/20 shadow-md">
+                    C
+                </div>
+                <div>
+                    <h2 id="cim-name" class="font-extrabold text-xs text-gray-100">Citizen Name</h2>
+                    <span id="cim-occupation" class="text-[10px] text-emerald-400 font-semibold">Doctor</span>
+                </div>
+            </div>
+            <button onclick="closeInspector()" class="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white">
+                <i class="fa-solid fa-xmark text-sm"></i>
+            </button>
+        </div>
+
+        <div class="flex items-center justify-between bg-white/5 px-2.5 py-1.5 rounded-xl border border-white/5">
+            <span class="text-[11px] font-semibold text-gray-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-video text-blue-400"></i> Track Cim Camera
+            </span>
+            <button id="btn-follow" onclick="toggleFollowCamera()" class="glass-btn px-2.5 py-1 rounded-lg text-[10px] font-bold text-blue-400">
+                Follow
+            </button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-1.5 text-[11px]">
+            <div class="bg-white/5 p-2 rounded-xl border border-white/5">
+                <div class="text-gray-400 text-[9px] uppercase font-bold">Transit Mode</div>
+                <div id="cim-transit" class="font-bold text-cyan-400">Walking (Sidewalk)</div>
+            </div>
+            <div class="bg-white/5 p-2 rounded-xl border border-white/5">
+                <div class="text-gray-400 text-[9px] uppercase font-bold">Current State</div>
+                <div id="cim-state" class="font-bold text-emerald-400">At Home</div>
+            </div>
+            <div class="bg-white/5 p-2 rounded-xl border border-white/5">
+                <div class="text-gray-400 text-[9px] uppercase font-bold">Savings</div>
+                <div id="cim-money" class="font-bold text-green-400">$8,450</div>
+            </div>
+            <div class="bg-white/5 p-2 rounded-xl border border-white/5">
+                <div class="text-gray-400 text-[9px] uppercase font-bold">Education</div>
+                <div id="cim-edu" class="font-bold text-amber-400">University</div>
+            </div>
+        </div>
+
+        <!-- HEALTH & VITALITY GAUGES -->
+        <div class="space-y-1.5 text-[10px] bg-white/5 p-2 rounded-xl border border-white/5">
+            <div>
+                <div class="flex justify-between mb-0.5">
+                    <span class="text-gray-300"><i class="fa-solid fa-heart-pulse text-red-400 mr-1"></i> Health Status</span>
+                    <span id="val-health" class="text-red-400 font-bold">100% (Healthy)</span>
+                </div>
+                <div class="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
+                    <div id="bar-health" class="h-full bg-red-500 transition-all duration-300" style="width: 100%"></div>
+                </div>
+            </div>
+            <div>
+                <div class="flex justify-between mb-0.5">
+                    <span class="text-gray-300"><i class="fa-solid fa-bolt text-amber-400 mr-1"></i> Energy</span>
+                    <span id="val-energy" class="text-gray-400">85%</span>
+                </div>
+                <div class="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
+                    <div id="bar-energy" class="h-full bg-amber-400 transition-all duration-300" style="width: 85%"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex-1 flex flex-col min-h-0 border-t border-white/10 pt-1.5">
+            <h3 class="text-[10px] font-bold text-gray-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+                <span><i class="fa-solid fa-route text-indigo-400 mr-1"></i> Lifepath Journal</span>
+            </h3>
+            <div id="lifepath-log" class="flex-1 overflow-y-auto space-y-1 pr-1 text-[11px]"></div>
+        </div>
+    </div>
+
+    <!-- MAIN BOTTOM TOOLBAR CONTAINER -->
+    <div class="absolute bottom-2 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-auto z-20 max-w-[98vw]">
+        
+        <!-- SUBCATEGORY SELECTION BAR -->
+        <div id="sub-toolbar" class="glass-panel px-2.5 py-1.5 rounded-2xl flex items-center gap-1.5 sub-panel hidden overflow-x-auto max-w-full">
+            <!-- Dynamic Subtools Injected Here -->
+        </div>
+
+        <!-- PRIMARY TOOL CATEGORIES -->
+        <div class="glass-panel px-2.5 py-1.5 rounded-2xl flex items-center gap-1 shadow-2xl overflow-x-auto max-w-full">
+            <button onclick="setCategory('inspect')" id="cat-inspect" class="glass-btn active px-2.5 py-2 rounded-xl flex items-center gap-1.5 text-xs font-bold text-gray-200 shrink-0">
+                <i class="fa-solid fa-hand-pointer text-blue-400"></i> Tap Select
+            </button>
+
+            <div class="h-5 w-px bg-white/10 shrink-0"></div>
+
+            <button onclick="setCategory('roads')" id="cat-roads" class="glass-btn px-2.5 py-2 rounded-xl flex items-center gap-1.5 text-xs font-bold text-gray-200 shrink-0">
+                <i class="fa-solid fa-road text-amber-500"></i> Asphalt Roads
+            </button>
+
+            <button onclick="setCategory('zones')" id="cat-zones" class="glass-btn px-2.5 py-2 rounded-xl flex items-center gap-1.5 text-xs font-bold text-gray-200 shrink-0">
+                <i class="fa-solid fa-city text-emerald-400"></i> City Zones
+            </button>
+
+            <button onclick="setCategory('services')" id="cat-services" class="glass-btn px-2.5 py-2 rounded-xl flex items-center gap-1.5 text-xs font-bold text-gray-200 shrink-0">
+                <i class="fa-solid fa-hospital-user text-red-400"></i> Emergency Services
+            </button>
+
+            <button onclick="setCategory('rural')" id="cat-rural" class="glass-btn px-2.5 py-2 rounded-xl flex items-center gap-1.5 text-xs font-bold text-gray-200 shrink-0">
+                <i class="fa-solid fa-wheat-awn text-lime-400"></i> Rural & Barns
+            </button>
+
+            <button onclick="setCategory('terraforming')" id="cat-terraforming" class="glass-btn px-2.5 py-2 rounded-xl flex items-center gap-1.5 text-xs font-bold text-gray-200 shrink-0">
+                <i class="fa-solid fa-tree-city text-emerald-500"></i> Parks & Trees
+            </button>
+
+            <div class="h-5 w-px bg-white/10 shrink-0"></div>
+
+            <button onclick="setCategory('demolish')" id="cat-demolish" class="glass-btn px-2.5 py-2 rounded-xl flex items-center gap-1.5 text-xs font-bold text-red-400 shrink-0">
+                <i class="fa-solid fa-dumpster"></i> Demolish
+            </button>
+        </div>
+    </div>
+
+    <!-- SCRIPT ENGINE -->
+    <script>
+        /* =========================================================================
+           GRID & MAP BOUNDARY CONSTANTS (35x35 GRID WITH FENCE BOUNDARY)
+           ========================================================================= */
+        const GRID_SIZE = 35;
+        const TILE_SIZE = 5.0;
+        const HALF_GRID = (GRID_SIZE * TILE_SIZE) / 2;
+        const LANE_OFFSET = 1.35; 
+        const SIDEWALK_OFFSET = 2.15; 
+
+        const MIN_BOUND = 1;
+        const MAX_BOUND = GRID_SIZE - 2;
+
+        const COLORS = {
+            grass: 0x1a3a1e,
+            roadAsphalt: 0x1e293b,
+            sidewalkConcrete: 0x64748b,
+            laneMarking: 0xf8fafc,
+            resLow: 0x10b981,
+            resHigh: 0x047857,
+            com: 0xf59e0b,
+            ind: 0x6366f1,
+            hospitalRed: 0xef4444,
+            policeBlue: 0x2563eb,
+            sirenRed: 0xd97706,
+            fencePost: 0x334155,
+            fenceWire: 0x94a3b8,
+            skinTones: [0xffdbac, 0xf1c27d, 0xe0ac69, 0x8d5524, 0xc68642],
+            clothes: [0xef4444, 0x3b82f6, 0x10b981, 0xf59e0b, 0x8b5cf6, 0x06b6d4, 0xec4899],
+            hairColors: [0x111827, 0x78350f, 0xca8a04, 0xd97706, 0x9ca3af]
+        };
+
+        const INITIAL_CITIZENS_NAMES = [
+            "Dr. Marcus Vance", "Officer Sarah Connor", "Alexander Smith", "Emma Johnson", "Liam Williams", 
+            "Olivia Brown", "Noah Jones", "Ava Garcia", "Ethan Miller", "Sophia Davis", "Lucas Rodriguez", 
+            "Mia Martinez", "Benjamin Wilson", "Isabella Anderson", "William Taylor", "Amelia Thomas", 
+            "James Hernandez", "Harper Moore", "Alexander Martin", "Evelyn Jackson", "Michael Thompson", 
+            "Abigail White", "Daniel Lopez", "Emily Lee", "Henry Gonzalez", "Elizabeth Harris", 
+            "Jackson Clark", "Sofia Lewis", "Sebastian Robinson", "Avery Walker", "Aiden Perez", 
+            "Ella Hall", "Matthew Young", "Scarlett Allen", "Samuel Sanchez", "Grace Wright", 
+            "David King", "Chloe Scott", "Joseph Green", "Camila Baker", "Carter Adams", 
+            "Penelope Nelson", "Owen Hill", "Riley Ramirez", "Wyatt Campbell", "Layla Mitchell", 
+            "John Roberts", "Lillian Carter", "Jack Phillips", "Nora Evans", "Luke Turner", 
+            "Zoey Torres", "Jayden Parker", "Mila Collins", "Dylan Edwards", "Hannah Stewart", 
+            "Grayson Flores", "Lily Morris", "Levi Nguyen", "Addison Murphy", "Isaac Rivera", 
+            "Eleanor Cook", "Gabriel Rogers", "Natalie Morgan", "Julian Peterson", "Luna Cooper", 
+            "Mateo Reed", "Savannah Bailey", "Anthony Bell", "Brooklyn Gomez", "Jaxon Kelly", 
+            "Bella Howard", "Lincoln Ward", "Claire Cox", "Joshua Diaz", "Skylar Richardson"
+        ];
+
+        const JOBS = ["Surgeon", "Police Officer", "Paramedic", "Civil Engineer", "Architect", "Retail Manager", "Pilot", "Wheat Farmer"];
+
+        /* =========================================================================
+           GLOBAL ENGINE STATE
+           ========================================================================= */
+        let scene, camera, renderer, controls;
+        let clock = new THREE.Clock();
+        let simTime = 8 * 60;
+        let simDay = 1;
+        let simSpeed = 1;
+        let currentWeather = 'sunny';
+
+        let cityGrid = Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(null));
+        let buildings = [];
+        let roads = [];
+        let roadGraph = {};
+        let citizens = [];
+        let emergencyVehicles = [];
+        let marineLife = [];
+        let smokeParticles = [];
+        let chirps = [];
+
+        let selectedCitizen = null;
+        let isFollowingCitizen = false;
+        let activeCategory = 'inspect';
+        let currentTool = 'select';
+        let cityTreasury = 1500000;
+
+        let dirLight, ambientLight, hemisphereLight;
+        let weatherParticles, rainGeo;
+        let ghostMesh = null;
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+
+        let audioCtx = null;
+
+        function showToast(message, isError = false) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast-banner px-4 py-2 rounded-xl text-xs font-bold text-white shadow-2xl flex items-center gap-2 ${
+                isError ? 'bg-red-600/90 border border-red-400' : 'bg-blue-600/90 border border-blue-400'
+            }`;
+            toast.innerHTML = `<i class="fa-solid ${isError ? 'fa-ban' : 'fa-circle-info'}"></i> ${message}`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 2500);
+        }
+
+        function playSFX(type) {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'tap') {
+                    osc.frequency.setValueAtTime(750, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.04);
+                    gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.04);
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.04);
+                } else if (type === 'build') {
+                    osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(650, audioCtx.currentTime + 0.14);
+                    gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.14);
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.14);
+                } else if (type === 'siren') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+                    osc.frequency.linearRampToValueAtTime(900, audioCtx.currentTime + 0.2);
+                    osc.frequency.linearRampToValueAtTime(600, audioCtx.currentTime + 0.4);
+                    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+                } else if (type === 'error') {
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+                    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+                }
+            } catch (e) {}
+        }
+
+        function triggerTapRing(e) {
+            const ring = document.createElement('div');
+            ring.className = 'tap-ring';
+            ring.style.left = `${e.clientX}px`;
+            ring.style.top = `${e.clientY}px`;
+            document.body.appendChild(ring);
+            setTimeout(() => ring.remove(), 400);
+        }
+
+        /* =========================================================================
+           1. CITIZEN MODELS (3D ARTICULATED & DETAILED)
+           ========================================================================= */
+        function createDetailedCitizenModel() {
+            const group = new THREE.Group();
+
+            const skinColor = COLORS.skinTones[Math.floor(Math.random() * COLORS.skinTones.length)];
+            const shirtColor = COLORS.clothes[Math.floor(Math.random() * COLORS.clothes.length)];
+            const pantsColor = COLORS.clothes[Math.floor(Math.random() * COLORS.clothes.length)];
+            const hairColor = COLORS.hairColors[Math.floor(Math.random() * COLORS.hairColors.length)];
+
+            const skinMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.7 });
+            const shirtMat = new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.6 });
+            const pantsMat = new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.8 });
+            const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.5 });
+            const shoeMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
+
+            // Torso & Jacket Layer
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.52, 0.24), shirtMat);
+            torso.position.y = 0.55;
+            torso.castShadow = true;
+
+            // Head & Hair/Hat Mesh
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.26, 0.26), skinMat);
+            head.position.y = 0.98;
+
+            const hairType = Math.floor(Math.random() * 3);
+            if (hairType === 0) {
+                // Short hair
+                const hair = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.1, 0.28), hairMat);
+                hair.position.set(0, 0.1, 0);
+                head.add(hair);
+            } else if (hairType === 1) {
+                // Cap
+                const cap = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 0.32), hairMat);
+                cap.position.set(0, 0.12, 0.02);
+                head.add(cap);
+            }
+
+            // Legs with Shoes
+            const legGeo = new THREE.BoxGeometry(0.13, 0.44, 0.13);
+            const shoeGeo = new THREE.BoxGeometry(0.14, 0.08, 0.22);
+
+            const leftLegGroup = new THREE.Group();
+            leftLegGroup.position.set(-0.1, 0.42, 0);
+            const leftLeg = new THREE.Mesh(legGeo, pantsMat);
+            leftLeg.position.y = -0.22;
+            const leftShoe = new THREE.Mesh(shoeGeo, shoeMat);
+            leftShoe.position.set(0, -0.42, 0.03);
+            leftLegGroup.add(leftLeg, leftShoe);
+
+            const rightLegGroup = new THREE.Group();
+            rightLegGroup.position.set(0.1, 0.42, 0);
+            const rightLeg = new THREE.Mesh(legGeo, pantsMat);
+            rightLeg.position.y = -0.22;
+            const rightShoe = new THREE.Mesh(shoeGeo, shoeMat);
+            rightShoe.position.set(0, -0.42, 0.03);
+            rightLegGroup.add(rightLeg, rightShoe);
+
+            // Arms
+            const armGeo = new THREE.BoxGeometry(0.1, 0.42, 0.1);
+            const leftArmGroup = new THREE.Group();
+            leftArmGroup.position.set(-0.24, 0.75, 0);
+            const leftArm = new THREE.Mesh(armGeo, shirtMat);
+            leftArm.position.y = -0.21;
+            leftArmGroup.add(leftArm);
+
+            const rightArmGroup = new THREE.Group();
+            rightArmGroup.position.set(0.24, 0.75, 0);
+            const rightArm = new THREE.Mesh(armGeo, shirtMat);
+            rightArm.position.y = -0.21;
+            rightArmGroup.add(rightArm);
+
+            group.add(torso, head, leftLegGroup, rightLegGroup, leftArmGroup, rightArmGroup);
+
+            // Dynamic Umbrella Prop
+            const umbrellaGroup = new THREE.Group();
+            const canopy = new THREE.Mesh(new THREE.ConeGeometry(0.75, 0.3, 8), new THREE.MeshStandardMaterial({ color: shirtColor }));
+            canopy.position.y = 1.45;
+            const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.8), new THREE.MeshStandardMaterial({ color: 0x111827 }));
+            handle.position.y = 1.0;
+            umbrellaGroup.add(canopy, handle);
+            umbrellaGroup.visible = false;
+            group.add(umbrellaGroup);
+
+            // Dynamic Shopping Bag Prop
+            const bagGroup = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.25, 0.12), new THREE.MeshStandardMaterial({ color: 0xf59e0b }));
+            bagGroup.position.set(-0.28, 0.4, 0);
+            bagGroup.visible = false;
+            group.add(bagGroup);
+
+            const scaleFactor = 0.65 + Math.random() * 0.1;
+            group.scale.set(scaleFactor, scaleFactor, scaleFactor);
+
+            return {
+                mesh: group,
+                limbs: { leftLeg: leftLegGroup, rightLeg: rightLegGroup, leftArm: leftArmGroup, rightArm: rightArmGroup },
+                umbrella: umbrellaGroup,
+                shoppingBag: bagGroup
+            };
+        }
+
+        /* =========================================================================
+           2. VEHICLE OVERHAULS (3D MULTI-PART DETAILED MODELS)
+           ========================================================================= */
+        function createDetailedVehicleModel(type = 'car') {
+            const group = new THREE.Group();
+
+            let bodyColor = COLORS.clothes[Math.floor(Math.random() * COLORS.clothes.length)];
+            if (type === 'police') bodyColor = 0x0f172a;
+            if (type === 'ambulance') bodyColor = 0xffffff;
+
+            const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, metalness: 0.5, roughness: 0.3 });
+            const glassMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.9, roughness: 0.1, transparent: true, opacity: 0.85 });
+            const tireMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 });
+            const chromeMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9, roughness: 0.1 });
+            const redMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+            const blueMat = new THREE.MeshBasicMaterial({ color: 0x3b82f6 });
+            const lightYellowMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+
+            if (type === 'ambulance') {
+                const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.3, 3.2), bodyMat);
+                chassis.position.y = 0.8;
+                chassis.castShadow = true;
+
+                const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.48, 0.8, 1.0), glassMat);
+                cabin.position.set(0, 0.9, 1.1);
+
+                const redCrossH = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.05), redMat);
+                redCrossH.position.set(0.76, 0.9, 0);
+                redCrossH.rotation.y = Math.PI / 2;
+
+                const redCrossV = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.05), redMat);
+                redCrossV.position.set(0.76, 0.9, 0);
+                redCrossV.rotation.y = Math.PI / 2;
+
+                // Lightbar with active flashing point light
+                const lightbar = new THREE.Group();
+                const lightR = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.2), redMat);
+                lightR.position.set(-0.3, 1.5, 0.8);
+                const lightB = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.2), blueMat);
+                lightB.position.set(0.3, 1.5, 0.8);
+
+                const strobeLight = new THREE.PointLight(0xef4444, 2, 12);
+                strobeLight.position.set(0, 1.6, 0.8);
+
+                lightbar.add(lightR, lightB, strobeLight);
+                lightbar.name = 'siren_lights';
+
+                group.add(chassis, cabin, redCrossH, redCrossV, lightbar);
+
+                for (let z of [-1.0, 1.0]) {
+                    for (let x of [-0.75, 0.75]) {
+                        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.2, 12), tireMat);
+                        wheel.rotation.z = Math.PI / 2;
+                        wheel.position.set(x, 0.28, z);
+                        group.add(wheel);
+                    }
+                }
+            } else if (type === 'police') {
+                const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.55, 2.6), bodyMat);
+                chassis.position.y = 0.45;
+                chassis.castShadow = true;
+
+                const doors = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.5, 1.2), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+                doors.position.y = 0.45;
+
+                const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.45, 1.3), glassMat);
+                cabin.position.set(0, 0.85, -0.1);
+
+                // Siren Lightbar
+                const lightbar = new THREE.Group();
+                const lightR = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 0.15), redMat);
+                lightR.position.set(-0.25, 1.12, -0.1);
+                const lightB = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 0.15), blueMat);
+                lightB.position.set(0.25, 1.12, -0.1);
+
+                const strobeLight = new THREE.PointLight(0x2563eb, 2, 12);
+                strobeLight.position.set(0, 1.2, -0.1);
+
+                lightbar.add(lightR, lightB, strobeLight);
+                lightbar.name = 'siren_lights';
+
+                group.add(chassis, doors, cabin, lightbar);
+
+                for (let z of [-0.8, 0.8]) {
+                    for (let x of [-0.68, 0.68]) {
+                        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.18, 12), tireMat);
+                        wheel.rotation.z = Math.PI / 2;
+                        wheel.position.set(x, 0.26, z);
+                        group.add(wheel);
+                    }
+                }
+            } else {
+                // Civilian Sedan with Headlights and Taillights
+                const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.45, 2.5), bodyMat);
+                body.position.y = 0.4;
+                body.castShadow = true;
+
+                const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.42, 1.3), glassMat);
+                cabin.position.set(0, 0.75, -0.1);
+
+                const headlightL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 0.05), lightYellowMat);
+                headlightL.position.set(-0.4, 0.42, 1.26);
+                const headlightR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 0.05), lightYellowMat);
+                headlightR.position.set(0.4, 0.42, 1.26);
+
+                const taillightL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 0.05), redMat);
+                taillightL.position.set(-0.4, 0.42, -1.26);
+                const taillightR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 0.05), redMat);
+                taillightR.position.set(0.4, 0.42, -1.26);
+
+                group.add(body, cabin, headlightL, headlightR, taillightL, taillightR);
+
+                for (let z of [-0.75, 0.75]) {
+                    for (let x of [-0.62, 0.62]) {
+                        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.16, 12), tireMat);
+                        wheel.rotation.z = Math.PI / 2;
+                        wheel.position.set(x, 0.24, z);
+                        group.add(wheel);
+                    }
+                }
+            }
+
+            group.scale.set(0.55, 0.55, 0.55);
+            return group;
+        }
+
+        /* =========================================================================
+           3. ARCHITECTURAL & ENVIRONMENT MODEL OVERHAULS
+           ========================================================================= */
+        function createDetailedBuildingModel(type) {
+            const group = new THREE.Group();
+
+            if (type === 'hospital') {
+                const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 });
+                const glassMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.8, roughness: 0.2 });
+                const redMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+
+                const mainBuilding = new THREE.Mesh(new THREE.BoxGeometry(4.0, 3.2, 3.6), whiteMat);
+                mainBuilding.position.y = 1.6;
+                mainBuilding.castShadow = true;
+
+                const glassTower = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.0, 2.2), glassMat);
+                glassTower.position.set(0, 4.2, 0);
+
+                const helipad = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.1, 16), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+                helipad.position.set(0, 5.25, 0);
+
+                const crossH = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.35, 0.1), redMat);
+                crossH.position.set(0, 2.4, 1.82);
+                const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.2, 0.1), redMat);
+                crossV.position.set(0, 2.4, 1.82);
+
+                group.add(mainBuilding, glassTower, helipad, crossH, crossV);
+                group.rotation.y = (Math.floor(Math.random() * 4) * Math.PI) / 2;
+                return group;
+            }
+
+            if (type === 'police_station') {
+                const darkMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 });
+                const blueGlassMat = new THREE.MeshStandardMaterial({ color: 0x2563eb, metalness: 0.8, roughness: 0.2 });
+
+                const mainBuilding = new THREE.Mesh(new THREE.BoxGeometry(3.8, 2.8, 3.6), darkMat);
+                mainBuilding.position.y = 1.4;
+                mainBuilding.castShadow = true;
+
+                const glassFront = new THREE.Mesh(new THREE.BoxGeometry(3.6, 2.2, 0.2), blueGlassMat);
+                glassFront.position.set(0, 1.5, 1.82);
+
+                const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.08, 2.5, 8), new THREE.MeshStandardMaterial({ color: 0x94a3b8 }));
+                antenna.position.set(-1.2, 4.05, -1.0);
+
+                group.add(mainBuilding, glassFront, antenna);
+                group.rotation.y = (Math.floor(Math.random() * 4) * Math.PI) / 2;
+                return group;
+            }
+
+            if (type === 'res_low') {
+                const wallMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 });
+                const roofMat = new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.4 });
+
+                const house = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.9, 3.2), wallMat);
+                house.position.y = 0.95;
+                house.castShadow = true;
+
+                const roof = new THREE.Mesh(new THREE.ConeGeometry(2.8, 1.4, 4), roofMat);
+                roof.position.y = 2.55;
+                roof.rotation.y = Math.PI / 4;
+
+                const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.2, 0.35), new THREE.MeshStandardMaterial({ color: 0x78350f }));
+                chimney.position.set(0.8, 2.6, 0.4);
+
+                group.add(house, roof, chimney);
+                group.rotation.y = (Math.floor(Math.random() * 4) * Math.PI) / 2;
+                return group;
+            }
+
+            if (type === 'res_high') {
+                const concreteMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.3 });
+                const glassMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.85, roughness: 0.15 });
+
+                const base = new THREE.Mesh(new THREE.BoxGeometry(3.6, 3.5, 3.6), concreteMat);
+                base.position.y = 1.75;
+                base.castShadow = true;
+
+                const tower = new THREE.Mesh(new THREE.BoxGeometry(3.0, 8.0, 3.0), glassMat);
+                tower.position.y = 7.5;
+
+                const crown = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.0, 2.2), concreteMat);
+                crown.position.y = 12.0;
+
+                group.add(base, tower, crown);
+                group.rotation.y = (Math.floor(Math.random() * 4) * Math.PI) / 2;
+                return group;
+            }
+
+            if (type === 'com') {
+                const body = new THREE.Mesh(new THREE.BoxGeometry(3.6, 4.2, 3.6), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+                body.position.y = 2.1;
+                body.castShadow = true;
+
+                const awning = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.2, 0.8), new THREE.MeshStandardMaterial({ color: 0xf59e0b }));
+                awning.position.set(0, 1.2, 1.9);
+
+                group.add(body, awning);
+                group.rotation.y = (Math.floor(Math.random() * 4) * Math.PI) / 2;
+                return group;
+            }
+
+            if (type === 'ind') {
+                const main = new THREE.Mesh(new THREE.BoxGeometry(3.6, 2.4, 3.6), new THREE.MeshStandardMaterial({ color: COLORS.ind }));
+                main.position.y = 1.2;
+                main.castShadow = true;
+
+                const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 4.5, 12), new THREE.MeshStandardMaterial({ color: 0x475569 }));
+                stack.position.set(1.1, 2.25, 1.1);
+
+                group.add(main, stack);
+                group.rotation.y = (Math.floor(Math.random() * 4) * Math.PI) / 2;
+                return group;
+            }
+
+            if (type === 'park') {
+                const lawn = new THREE.Mesh(new THREE.BoxGeometry(TILE_SIZE - 0.2, 0.1, TILE_SIZE - 0.2), new THREE.MeshStandardMaterial({ color: 0x15803d }));
+                lawn.position.y = 0.05;
+                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.25, 1.4, 6), new THREE.MeshStandardMaterial({ color: 0x5c3a21 }));
+                trunk.position.y = 0.75;
+                const leaves = new THREE.Mesh(new THREE.ConeGeometry(1.4, 2.8, 7), new THREE.MeshStandardMaterial({ color: 0x16a34a }));
+                leaves.position.y = 2.45;
+                group.add(lawn, trunk, leaves);
+                return group;
+            }
+
+            const fallback = new THREE.Mesh(new THREE.BoxGeometry(TILE_SIZE - 0.5, 1.5, TILE_SIZE - 0.5), new THREE.MeshStandardMaterial({ color: 0x64748b }));
+            fallback.position.y = 0.75;
+            group.add(fallback);
+            return group;
+        }
+
+        /* =========================================================================
+           4. MAP FENCE BOUNDARY
+           ========================================================================= */
+        function createBoundaryFences() {
+            const fenceGroup = new THREE.Group();
+            const postGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.4, 8);
+            const postMat = new THREE.MeshStandardMaterial({ color: COLORS.fencePost, metalness: 0.8 });
+            const lightMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+
+            for (let r = MIN_BOUND; r <= MAX_BOUND; r++) {
+                for (let c = MIN_BOUND; c <= MAX_BOUND; c++) {
+                    if (r === MIN_BOUND || r === MAX_BOUND || c === MIN_BOUND || c === MAX_BOUND) {
+                        const worldPos = gridToWorld(r, c);
+
+                        const post = new THREE.Mesh(postGeo, postMat);
+                        post.position.set(worldPos.x, 0.7, worldPos.z);
+
+                        const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), lightMat);
+                        beacon.position.set(worldPos.x, 1.45, worldPos.z);
+
+                        fenceGroup.add(post, beacon);
+                    }
+                }
+            }
+
+            scene.add(fenceGroup);
+        }
+
+        /* =========================================================================
+           5. ROAD & SIDEWALK GRAPH SYSTEM
+           ========================================================================= */
+        function createRoadTile(r, c, worldPos, roadType = 'road') {
+            if (cityGrid[r][c]) return;
+
+            const group = new THREE.Group();
+            const asphaltMesh = new THREE.Mesh(new THREE.PlaneGeometry(TILE_SIZE, TILE_SIZE), new THREE.MeshStandardMaterial({ color: COLORS.roadAsphalt }));
+            asphaltMesh.rotation.x = -Math.PI / 2;
+            asphaltMesh.position.y = 0.01;
+            group.add(asphaltMesh);
+
+            const sideMat = new THREE.MeshStandardMaterial({ color: COLORS.sidewalkConcrete });
+            const curbLeft = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, TILE_SIZE), sideMat);
+            curbLeft.position.set(-SIDEWALK_OFFSET, 0.04, 0);
+            const curbRight = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, TILE_SIZE), sideMat);
+            curbRight.position.set(SIDEWALK_OFFSET, 0.04, 0);
+            group.add(curbLeft, curbRight);
+
+            group.position.set(worldPos.x, 0, worldPos.z);
+            scene.add(group);
+
+            const roadObj = { r, c, x: worldPos.x, z: worldPos.z, type: roadType, mesh: group };
+            cityGrid[r][c] = roadObj;
+            roads.push(roadObj);
+        }
+
+        function buildRoadGraph() {
+            roadGraph = {};
+            roads.forEach(rd => {
+                const key = `${rd.r},${rd.c}`;
+                roadGraph[key] = { r: rd.r, c: rd.c, x: rd.x, z: rd.z, neighbors: [] };
+            });
+
+            Object.keys(roadGraph).forEach(key => {
+                const node = roadGraph[key];
+                [ [-1,0], [1,0], [0,-1], [0,1] ].forEach(([dr, dc]) => {
+                    const nKey = `${node.r + dr},${node.c + dc}`;
+                    if (roadGraph[nKey]) node.neighbors.push(roadGraph[nKey]);
+                });
+            });
+        }
+
+        function getClosestRoadNode(pos) {
+            if (roads.length === 0) return { x: pos.x, z: pos.z, r: 0, c: 0 };
+            let closest = roads[0];
+            let minDist = Infinity;
+            roads.forEach(rd => {
+                const dist = Math.hypot(rd.x - pos.x, rd.z - pos.z);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = rd;
+                }
+            });
+            return closest;
+        }
+
+        /* =========================================================================
+           6. CITIZEN ENGINE (SKELETAL ANIMATION & LIFEPATH)
+           ========================================================================= */
+        class Citizen {
+            constructor(customName = null) {
+                this.id = 'cim_' + Math.random().toString(36).substr(2, 9);
+                this.name = customName || INITIAL_CITIZENS_NAMES[citizens.length % INITIAL_CITIZENS_NAMES.length];
+                this.firstName = this.name.split(' ')[0];
+                this.occupation = JOBS[Math.floor(Math.random() * JOBS.length)];
+                this.education = 'University';
+
+                this.health = 100;
+                this.isIll = false;
+                this.energy = 85 + Math.random() * 15;
+                this.hunger = 10 + Math.random() * 20;
+                this.happiness = 90 + Math.random() * 10;
+                this.savings = Math.floor(5000 + Math.random() * 8000);
+
+                this.home = this.findRandomBuilding('res_low') || this.findRandomBuilding('res_high');
+                this.workplace = this.findRandomBuilding('hospital') || this.findRandomBuilding('police_station') || this.findRandomBuilding('com');
+
+                this.state = 'HOME';
+                this.transitMode = 'SIDEWALK';
+
+                const modelData = createDetailedCitizenModel();
+                this.mesh = modelData.mesh;
+                this.limbs = modelData.limbs;
+                this.umbrella = modelData.umbrella;
+                this.shoppingBag = modelData.shoppingBag;
+
+                this.carMesh = createDetailedVehicleModel('car');
+                this.carMesh.visible = false;
+                scene.add(this.carMesh);
+
+                const spawnPos = this.home ? { x: this.home.x, z: this.home.z } : { x: 0, z: 0 };
+                this.mesh.position.set(spawnPos.x, 0, spawnPos.z);
+                this.position = this.mesh.position;
+                scene.add(this.mesh);
+
+                this.path = [];
+                this.pathIndex = 0;
+                this.speed = 0.12;
+                this.walkAnimTime = 0;
+
+                this.lifepathLogs = [];
+                this.logEvent(`Settled in Metropolis Bay.`);
+            }
+
+            findRandomBuilding(type) {
+                const candidates = buildings.filter(b => b.type === type);
+                if (candidates.length === 0) return null;
+                return candidates[Math.floor(Math.random() * candidates.length)];
+            }
+
+            logEvent(text) {
+                const hour = Math.floor(simTime / 60).toString().padStart(2, '0');
+                const min = Math.floor(simTime % 60).toString().padStart(2, '0');
+                this.lifepathLogs.unshift({ time: `Day ${simDay} - ${hour}:${min}`, text });
+                if (this.lifepathLogs.length > 15) this.lifepathLogs.pop();
+                if (selectedCitizen === this) renderLifepathLogs();
+            }
+
+            update(delta) {
+                this.energy = Math.max(0, this.energy - delta * 0.6 * simSpeed);
+                this.hunger = Math.min(100, this.hunger + delta * 1.0 * simSpeed);
+
+                // Rain umbrella state
+                if (this.umbrella) {
+                    this.umbrella.visible = (currentWeather === 'rain' || currentWeather === 'storm') && this.state === 'TRAVELING';
+                }
+
+                if (!this.isIll && Math.random() < 0.0008 * simSpeed) {
+                    this.triggerIllness();
+                }
+
+                if (this.isIll) {
+                    this.health = Math.max(10, this.health - delta * 3.0 * simSpeed);
+                } else {
+                    this.health = Math.min(100, this.health + delta * 1.0 * simSpeed);
+                }
+
+                if (this.state !== 'TRAVELING') {
+                    this.evaluateRoutine();
+                } else {
+                    this.moveAlongPath(delta);
+                }
+
+                // 2-Phase Limb Skeletal Animation
+                if (this.state === 'TRAVELING' && this.transitMode === 'SIDEWALK') {
+                    this.walkAnimTime += delta * 14 * simSpeed;
+                    const swing = Math.sin(this.walkAnimTime) * 0.65;
+                    this.limbs.leftLeg.rotation.x = swing;
+                    this.limbs.rightLeg.rotation.x = -swing;
+                    this.limbs.leftArm.rotation.x = -swing;
+                    this.limbs.rightArm.rotation.x = swing;
+                }
+            }
+
+            triggerIllness() {
+                this.isIll = true;
+                this.logEvent(`Fell ill! Requesting Emergency Medical Ambulance.`);
+                addChirp("Health Alert", `${this.name} requires emergency medical transport!`);
+                dispatchEmergencyVehicle('ambulance', this);
+            }
+
+            evaluateRoutine() {
+                const hour = simTime / 60;
+                if ((this.energy < 20 || hour >= 22 || hour < 6) && this.state !== 'HOME') {
+                    this.travelTo(this.home, 'HOME', 'Returning home to sleep.');
+                    return;
+                }
+                if (hour >= 8 && hour < 17 && this.state !== 'WORKING' && this.workplace) {
+                    this.travelTo(this.workplace, 'WORKING', `Heading to ${this.occupation} duties.`);
+                    return;
+                }
+            }
+
+            travelTo(targetBuilding, nextState, logMsg) {
+                if (!targetBuilding) return;
+
+                const startRoad = getClosestRoadNode(this.position);
+                const endRoad = getClosestRoadNode({ x: targetBuilding.x, z: targetBuilding.z });
+
+                this.path = [
+                    { x: startRoad.x + SIDEWALK_OFFSET, z: startRoad.z, mode: 'SIDEWALK' },
+                    { x: endRoad.x + SIDEWALK_OFFSET, z: endRoad.z, mode: 'SIDEWALK' },
+                    { x: targetBuilding.x, z: targetBuilding.z, mode: 'SIDEWALK' }
+                ];
+
+                this.pathIndex = 0;
+                this.state = 'TRAVELING';
+                this.targetState = nextState;
+                this.logEvent(logMsg);
+            }
+
+            moveAlongPath(delta) {
+                if (this.path.length === 0) return;
+
+                const currentWaypoint = this.path[this.pathIndex];
+                const dx = currentWaypoint.x - this.position.x;
+                const dz = currentWaypoint.z - this.position.z;
+                const dist = Math.hypot(dx, dz);
+
+                if (dist < 0.45) {
+                    this.pathIndex++;
+                    if (this.pathIndex >= this.path.length) {
+                        this.state = this.targetState;
+                        return;
+                    }
+                } else {
+                    const step = 0.12 * simSpeed;
+                    this.position.x += (dx / dist) * step;
+                    this.position.z += (dz / dist) * step;
+
+                    this.mesh.position.set(this.position.x, 0, this.position.z);
+                    this.mesh.rotation.y = Math.atan2(dx, dz);
+                }
+            }
+        }
+
+        /* =========================================================================
+           7. EMERGENCY VEHICLES ENGINE
+           ========================================================================= */
+        class EmergencyVehicle {
+            constructor(type, targetCitizen) {
+                this.type = type;
+                this.targetCitizen = targetCitizen;
+
+                this.mesh = createDetailedVehicleModel(type);
+                const hospitalOrPolice = buildings.find(b => b.type === (type === 'ambulance' ? 'hospital' : 'police_station')) || roads[0];
+                const startRoad = getClosestRoadNode({ x: hospitalOrPolice.x, z: hospitalOrPolice.z });
+
+                this.position = { x: startRoad.x + LANE_OFFSET, z: startRoad.z };
+                this.mesh.position.set(this.position.x, 0, this.position.z);
+                scene.add(this.mesh);
+
+                const destRoad = getClosestRoadNode(targetCitizen.position);
+                this.path = [
+                    { x: startRoad.x + LANE_OFFSET, z: startRoad.z },
+                    { x: destRoad.x + LANE_OFFSET, z: destRoad.z },
+                    { x: startRoad.x + LANE_OFFSET, z: startRoad.z }
+                ];
+                this.pathIndex = 0;
+                this.speed = 0.55;
+
+                playSFX('siren');
+            }
+
+            update(delta) {
+                if (this.path.length === 0) return;
+
+                const currentWaypoint = this.path[this.pathIndex];
+                const dx = currentWaypoint.x - this.position.x;
+                const dz = currentWaypoint.z - this.position.z;
+                const dist = Math.hypot(dx, dz);
+
+                const sirenLights = this.mesh.getObjectByName('siren_lights');
+                if (sirenLights) sirenLights.rotation.y += delta * 15;
+
+                if (dist < 0.6) {
+                    this.pathIndex++;
+                    if (this.pathIndex === 1 && this.targetCitizen) {
+                        if (this.type === 'ambulance') {
+                            this.targetCitizen.isIll = false;
+                            this.targetCitizen.health = 100;
+                            this.targetCitizen.logEvent("Rescued by Paramedics and treated at Hospital!");
+                        }
+                    }
+                    if (this.pathIndex >= this.path.length) {
+                        scene.remove(this.mesh);
+                        emergencyVehicles = emergencyVehicles.filter(v => v !== this);
+                    }
+                } else {
+                    const step = this.speed * simSpeed;
+                    this.position.x += (dx / dist) * step;
+                    this.position.z += (dz / dist) * step;
+
+                    this.mesh.position.set(this.position.x, 0, this.position.z);
+                    this.mesh.rotation.y = Math.atan2(dx, dz);
+                }
+            }
+        }
+
+        function dispatchEmergencyVehicle(type, citizen) {
+            const vehicle = new EmergencyVehicle(type, citizen);
+            emergencyVehicles.push(vehicle);
+        }
+
+        function spawnPopulationBatch(count) {
+            for (let i = 0; i < count; i++) {
+                citizens.push(new Citizen());
+            }
+            updateCitizenListUI();
+            updateDashboardUI();
+        }
+
+        /* =========================================================================
+           8. THREE.JS SCENE SETUP & LIGHTING
+           ========================================================================= */
+        function initThreeJS() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x020617);
+            scene.fog = new THREE.FogExp2(0x020617, 0.0035);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(100, 110, 130);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
+            scene.add(ambientLight);
+
+            dirLight = new THREE.DirectionalLight(0xfff7ed, 1.4);
+            dirLight.position.set(120, 180, 100);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
+
+            const groundGeo = new THREE.PlaneGeometry(GRID_SIZE * TILE_SIZE + 80, GRID_SIZE * TILE_SIZE + 80);
+            const groundMat = new THREE.MeshStandardMaterial({ color: COLORS.grass });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.y = -0.05;
+            scene.add(ground);
+
+            initGhostPreview();
+            initWeatherSystem();
+            createBoundaryFences();
+
+            window.addEventListener('resize', onWindowResize);
+            renderer.domElement.addEventListener('pointerdown', onCanvasPointerDown);
+            renderer.domElement.addEventListener('pointermove', onCanvasPointerMove);
+        }
+
+        function initGhostPreview() {
+            const geo = new THREE.BoxGeometry(TILE_SIZE, 0.3, TILE_SIZE);
+            const mat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.45 });
+            ghostMesh = new THREE.Mesh(geo, mat);
+            ghostMesh.visible = false;
+            scene.add(ghostMesh);
+        }
+
+        function initWeatherSystem() {
+            const rainCount = 2000;
+            rainGeo = new THREE.BufferGeometry();
+            const rainPositions = new Float32Array(rainCount * 3);
+            for (let i = 0; i < rainCount * 3; i += 3) {
+                rainPositions[i] = (Math.random() - 0.5) * 300;
+                rainPositions[i + 1] = Math.random() * 120;
+                rainPositions[i + 2] = (Math.random() - 0.5) * 300;
+            }
+            rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+            const rainParticles = new THREE.Points(rainGeo, new THREE.PointsMaterial({ color: 0x93c5fd, size: 0.4, transparent: true, opacity: 0.75 }));
+            rainParticles.name = 'rain';
+
+            weatherParticles = new THREE.Group();
+            weatherParticles.add(rainParticles);
+            rainParticles.visible = false;
+            scene.add(weatherParticles);
+        }
+
+        function setWeather(mode) {
+            currentWeather = mode;
+            const rainP = weatherParticles.getObjectByName('rain');
+            if (rainP) rainP.visible = (mode === 'rain' || mode === 'storm');
+        }
+
+        /* =========================================================================
+           9. GRID INITIALIZATION
+           ========================================================================= */
+        function initCityGrid() {
+            for (let r = 8; r < 28; r += 6) {
+                for (let c = 8; c < 28; c++) {
+                    createRoadTile(r, c, gridToWorld(r, c), 'road');
+                }
+            }
+
+            for (let c = 8; c < 28; c += 6) {
+                for (let r = 8; r < 28; r++) {
+                    if (!cityGrid[r][c]) createRoadTile(r, c, gridToWorld(r, c), 'road');
+                }
+            }
+
+            buildStructure(10, 10, 'hospital', false);
+            buildStructure(10, 16, 'police_station', false);
+
+            const starterZones = ['res_low', 'res_high', 'com', 'ind', 'park'];
+            let idx = 0;
+            for (let r = 9; r < 27; r += 2) {
+                for (let c = 9; c < 27; c += 2) {
+                    if (!cityGrid[r][c]) {
+                        buildStructure(r, c, starterZones[idx % starterZones.length], false);
+                        idx++;
+                    }
+                }
+            }
+
+            buildRoadGraph();
+        }
+
+        function buildStructure(r, c, type, deductCost = true) {
+            if (cityGrid[r][c]) return;
+
+            const costs = { hospital: 25000, police_station: 20000, res_low: 5000, res_high: 12000, com: 8000, ind: 9500, park: 4000 };
+            const cost = costs[type] || 4000;
+
+            if (deductCost && cityTreasury < cost) {
+                showToast("Insufficient treasury funds for construction!", true);
+                playSFX('error');
+                return;
+            }
+
+            if (deductCost) {
+                cityTreasury -= cost;
+                playSFX('build');
+                updateDashboardUI();
+            }
+
+            const worldPos = gridToWorld(r, c);
+            const mesh = createDetailedBuildingModel(type);
+            mesh.position.set(worldPos.x, 0, worldPos.z);
+            scene.add(mesh);
+
+            const buildingObj = { id: 'bld_' + Math.random().toString(36).substr(2, 9), r, c, x: worldPos.x, z: worldPos.z, type, mesh };
+            cityGrid[r][c] = buildingObj;
+            buildings.push(buildingObj);
+        }
+
+        function gridToWorld(r, c) {
+            return {
+                x: (c * TILE_SIZE) - HALF_GRID + TILE_SIZE / 2,
+                z: (r * TILE_SIZE) - HALF_GRID + TILE_SIZE / 2
+            };
+        }
+
+        /* =========================================================================
+           10. RAYCASTING & CLICK CONTROLS
+           ========================================================================= */
+        function updateRaycaster(e) {
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+        }
+
+        function onCanvasPointerMove(e) {
+            updateRaycaster(e);
+            if (currentTool === 'select') {
+                ghostMesh.visible = false;
+                return;
+            }
+
+            const intersects = raycaster.intersectObjects(scene.children, true);
+            if (intersects.length > 0) {
+                const point = intersects[0].point;
+                const c = Math.floor((point.x + HALF_GRID) / TILE_SIZE);
+                const r = Math.floor((point.z + HALF_GRID) / TILE_SIZE);
+
+                if (r >= MIN_BOUND && r <= MAX_BOUND && c >= MIN_BOUND && c <= MAX_BOUND) {
+                    const worldPos = gridToWorld(r, c);
+                    ghostMesh.position.set(worldPos.x, 0.2, worldPos.z);
+                    ghostMesh.visible = true;
+                    ghostMesh.material.color.setHex(0x38bdf8);
+                } else {
+                    ghostMesh.position.set((c * TILE_SIZE) - HALF_GRID + TILE_SIZE / 2, 0.2, (r * TILE_SIZE) - HALF_GRID + TILE_SIZE / 2);
+                    ghostMesh.visible = true;
+                    ghostMesh.material.color.setHex(0xef4444);
+                }
+            }
+        }
+
+        function onCanvasPointerDown(e) {
+            triggerTapRing(e);
+            playSFX('tap');
+            updateRaycaster(e);
+
+            if (currentTool === 'select') {
+                const citizenMeshes = citizens.map(c => c.mesh);
+                const intersects = raycaster.intersectObjects(citizenMeshes, true);
+
+                if (intersects.length > 0) {
+                    let hitObj = intersects[0].object;
+                    while (hitObj.parent && hitObj.parent.type !== 'Scene') hitObj = hitObj.parent;
+                    const foundCim = citizens.find(c => c.mesh === hitObj);
+                    if (foundCim) selectCitizen(foundCim);
+                }
+            } else {
+                const intersects = raycaster.intersectObjects(scene.children, true);
+                if (intersects.length > 0) {
+                    const point = intersects[0].point;
+                    const c = Math.floor((point.x + HALF_GRID) / TILE_SIZE);
+                    const r = Math.floor((point.z + HALF_GRID) / TILE_SIZE);
+
+                    if (r < MIN_BOUND || r > MAX_BOUND || c < MIN_BOUND || c > MAX_BOUND) {
+                        showToast("Cannot build outside perimeter fence boundary!", true);
+                        playSFX('error');
+                        return;
+                    }
+
+                    if (currentTool === 'road') {
+                        createRoadTile(r, c, gridToWorld(r, c), 'road');
+                        buildRoadGraph();
+                        playSFX('build');
+                    } else {
+                        buildStructure(r, c, currentTool, true);
+                    }
+                }
+            }
+        }
+
+        /* =========================================================================
+           11. UI TOOLBARS & PANELS
+           ========================================================================= */
+        const TOOL_CATEGORIES = {
+            inspect: [{ id: 'select', name: 'Tap Select', icon: 'fa-hand-pointer' }],
+            roads: [{ id: 'road', name: 'Asphalt Road', icon: 'fa-road' }],
+            zones: [
+                { id: 'res_low', name: 'Suburban Villa', icon: 'fa-house' },
+                { id: 'res_high', name: 'Skyscraper', icon: 'fa-building-user' },
+                { id: 'com', name: 'Commercial', icon: 'fa-store' },
+                { id: 'ind', name: 'Industrial Factory', icon: 'fa-factory' }
+            ],
+            services: [
+                { id: 'hospital', name: 'Hospital', icon: 'fa-hospital' },
+                { id: 'police_station', name: 'Police Station', icon: 'fa-shield-halved' }
+            ],
+            terraforming: [{ id: 'park', name: 'Park Pathways', icon: 'fa-tree' }]
+        };
+
+        function setCategory(catKey) {
+            activeCategory = catKey;
+            document.querySelectorAll('#cat-inspect, #cat-roads, #cat-zones, #cat-services, #cat-terraforming').forEach(b => b?.classList.remove('active'));
+            const activeCatBtn = document.getElementById(`cat-${catKey}`);
+            if (activeCatBtn) activeCatBtn.classList.add('active');
+
+            const subPanel = document.getElementById('sub-toolbar');
+            const items = TOOL_CATEGORIES[catKey] || [];
+
+            if (items.length > 0) {
+                subPanel.classList.remove('hidden');
+                subPanel.innerHTML = items.map(item => `
+                    <button onclick="setTool('${item.id}')" id="sub-${item.id}" class="glass-btn px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-bold text-gray-200 shrink-0">
+                        <i class="fa-solid ${item.icon}"></i> ${item.name}
+                    </button>
+                `).join('');
+                setTool(items[0].id);
+            } else {
+                subPanel.classList.add('hidden');
+            }
+        }
+
+        function setTool(toolId) {
+            currentTool = toolId;
+            document.querySelectorAll('#sub-toolbar .glass-btn').forEach(b => b.classList.remove('active'));
+            const activeSub = document.getElementById(`sub-${toolId}`);
+            if (activeSub) activeSub.classList.add('active');
+        }
+
+        function addChirp(author, message) {
+            chirps.unshift({ author, message, time: `Day ${simDay}` });
+            if (chirps.length > 20) chirps.pop();
+            renderChirperFeed();
+        }
+
+        function switchLeftTab(tab) {
+            document.getElementById('tab-cims').classList.toggle('hidden', tab !== 'cims');
+            document.getElementById('tab-chirper').classList.toggle('hidden', tab !== 'chirper');
+        }
+
+        function selectCitizen(cim) {
+            selectedCitizen = cim;
+            document.getElementById('inspector-panel').classList.remove('translate-x-[125%]');
+            document.getElementById('cim-name').innerText = cim.name;
+            document.getElementById('cim-occupation').innerText = cim.occupation;
+            updateInspectorUI();
+            renderLifepathLogs();
+        }
+
+        function closeInspector() {
+            selectedCitizen = null;
+            isFollowingCitizen = false;
+            document.getElementById('inspector-panel').classList.add('translate-x-[125%]');
+        }
+
+        function toggleFollowCamera() {
+            isFollowingCitizen = !isFollowingCitizen;
+            document.getElementById('btn-follow').classList.toggle('active', isFollowingCitizen);
+        }
+
+        function updateInspectorUI() {
+            if (!selectedCitizen) return;
+            document.getElementById('cim-transit').innerText = selectedCitizen.transitMode;
+            document.getElementById('cim-state').innerText = selectedCitizen.state;
+            document.getElementById('val-health').innerText = `${Math.floor(selectedCitizen.health)}% (${selectedCitizen.isIll ? 'Ill' : 'Healthy'})`;
+            document.getElementById('bar-health').style.width = `${selectedCitizen.health}%`;
+        }
+
+        function renderLifepathLogs() {
+            if (!selectedCitizen) return;
+            document.getElementById('lifepath-log').innerHTML = selectedCitizen.lifepathLogs.map(log => `
+                <div class="bg-white/5 p-2 rounded-xl border border-white/5">
+                    <span class="text-[9px] text-blue-400 font-bold block">${log.time}</span>
+                    <span class="text-gray-200 text-[11px]">${log.text}</span>
+                </div>
+            `).join('');
+        }
+
+        function renderChirperFeed() {
+            document.getElementById('chirper-feed').innerHTML = chirps.map(c => `
+                <div class="bg-white/5 p-2 rounded-xl border border-white/5 space-y-1">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] font-bold text-sky-400">@${c.author.replace(/\s+/g, '')}</span>
+                        <span class="text-[8px] text-gray-500 font-semibold">${c.time}</span>
+                    </div>
+                    <p class="text-[11px] text-gray-300">${c.message}</p>
+                </div>
+            `).join('');
+        }
+
+        function updateCitizenListUI() {
+            document.getElementById('tab-cim-count').innerText = citizens.length;
+            document.getElementById('citizen-list').innerHTML = citizens.map(cim => `
+                <div onclick="selectCitizenById('${cim.id}')" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 cursor-pointer border border-white/5 flex items-center justify-between">
+                    <div>
+                        <div class="font-bold text-[11px] text-gray-200">${cim.name}</div>
+                        <div class="text-[9px] text-gray-400">${cim.occupation}</div>
+                    </div>
+                    <span class="text-[9px] px-1.5 py-0.5 rounded-full ${cim.isIll ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-300'} font-bold">
+                        ${cim.isIll ? 'Sick' : 'Healthy'}
+                    </span>
+                </div>
+            `).join('');
+        }
+
+        function selectCitizenById(id) {
+            const cim = citizens.find(c => c.id === id);
+            if (cim) selectCitizen(cim);
+        }
+
+        function updateDashboardUI() {
+            document.getElementById('stat-pop').innerText = citizens.length;
+            document.getElementById('stat-emergency').innerText = `${emergencyVehicles.length} Active`;
+            document.getElementById('stat-money').innerText = `$${cityTreasury.toLocaleString()}`;
+
+            const avgHealth = citizens.reduce((acc, c) => acc + c.health, 0) / citizens.length;
+            document.getElementById('stat-health').innerText = `${Math.floor(avgHealth)}%`;
+        }
+
+        function setSpeed(spd) {
+            simSpeed = spd;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        /* =========================================================================
+           12. MAIN ANIMATION LOOP
+           ========================================================================= */
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+
+            if (simSpeed > 0) {
+                simTime += delta * 6 * simSpeed;
+                if (simTime >= 1440) {
+                    simTime = 0;
+                    simDay++;
+                }
+
+                const hour = Math.floor(simTime / 60).toString().padStart(2, '0');
+                const min = Math.floor(simTime % 60).toString().padStart(2, '0');
+                document.getElementById('time-display').innerText = `${hour}:${min} - Day ${simDay}`;
+
+                citizens.forEach(cim => cim.update(delta));
+                emergencyVehicles.forEach(v => v.update(delta));
+                updateDashboardUI();
+            }
+
+            if (isFollowingCitizen && selectedCitizen) {
+                const targetPos = selectedCitizen.position;
+                controls.target.lerp(new THREE.Vector3(targetPos.x, 0.8, targetPos.z), 0.1);
+            }
+
+            controls.update();
+            updateInspectorUI();
+            renderer.render(scene, camera);
+        }
+
+        window.onload = function () {
+            initThreeJS();
+            initCityGrid();
+            setCategory('inspect');
+
+            spawnPopulationBatch(75);
+            addChirp("City Planning Office", "High-detail models, multi-part citizens & active emergency strobes deployed!");
+            animate();
+        };
+    </script>
+</body>
+</html>
